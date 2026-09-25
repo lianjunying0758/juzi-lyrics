@@ -1,0 +1,13 @@
+{
+  "routes": [
+    {
+      "routePath": "/api/ws",
+      "mountPath": "/api",
+      "method": "GET",
+      "module": [
+        "api/ws.js:onRequestGet"
+      ]
+    }
+  ],
+  "baseURL": "/"
+}

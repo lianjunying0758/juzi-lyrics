@@ -1,0 +1,287 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="桔子好声音">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="167x167" href="assets/icons/icon-167.png">
+<link rel="apple-touch-icon" sizes="152x152" href="assets/icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="120x120" href="assets/icons/icon-120.png">
+<title>桔子好声音 · H5歌词播放器</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css?v=20260924b">
+</head>
+<body>
+<!-- 开屏动画 -->
+<div class="splash" id="splash">
+  <div class="grid-bg"></div>
+  <div class="glow"></div>
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+  <div class="top-tag">PLAYER BOOT</div>
+  <div class="loader">
+    <div class="ring"><div class="ring-percent" id="splashPercent">0%</div></div>
+    <div class="loader-text">正在加载中</div>
+    <div class="progress-wrap"><div class="progress-bar"></div></div>
+    <div class="loader-status">
+      <span>初始化引擎</span>
+      <span>加载歌词库</span>
+      <span>渲染界面</span>
+      <span>就绪</span>
+    </div>
+  </div>
+  <div class="scan-line"></div>
+  <div class="signature">
+    <div class="sig-en">JUZI MUSIC</div>
+    <img class="sig-logo" src="assets/logo_splash.png" alt="桔子好声音">
+    <div class="sig-divider">
+      <div class="line left"></div>
+      <div class="dot"></div>
+      <div class="line right"></div>
+    </div>
+    <div class="sig-sub">陈奕迅歌词播放器</div>
+  </div>
+  <div class="footer">
+    <span>v2.0</span>
+    <span>BUILD 2026</span>
+  </div>
+</div>
+<div id="app">
+  <div class="logoBg" id="logoBg"></div>
+  <main>
+    <section class="searchPanel" id="searchPanel">
+      <div class="searchRow">
+        <span class="searchIcon">🔍</span>
+        <input id="filterInput" placeholder="搜索 1171 首歌曲…">
+      </div>
+      <div id="localList" class="songList"></div>
+    </section>
+
+    <section class="stage" id="stage">
+      <div class="meta"><span id="nowTitle">未选择歌曲</span><span id="time">00:00 / 00:00</span></div>
+      <div id="interactiveLegend" class="interactiveLegend hidden">
+        <span class="legendItem"><span class="legendDot lead"></span>主唱</span>
+        <span class="legendItem"><span class="legendDot audience"></span>观众</span>
+        <span class="legendItem"><span class="legendDot chorus"></span>合唱</span>
+      </div>
+      <div class="lyricsViewport">
+        <div class="lyricsTrack" id="lyricsTrack"></div>
+      </div>
+      <div id="countdownDisplay" class="countdown hidden"></div>
+      <div id="seekFeedback" class="seekFeedback hidden"></div>
+    </section>
+
+    <!-- 全屏歌名渐隐 -->
+    <div id="titleSplash" class="titleSplash hidden">
+      <div class="titleSplashInner">
+        <div class="titleSplashSong" id="titleSplashSong"></div>
+        <div class="titleSplashArtist" id="titleSplashArtist"></div>
+      </div>
+    </div>
+
+    <section class="controls" id="controls">
+      <input id="progress" type="range" min="0" max="100" value="0" step="0.1">
+      <div class="controlRow">
+        <button id="prevBtn" title="上一首">⏮</button>
+        <button id="playBtn" class="play">▶</button>
+        <button id="nextBtn" title="下一首">⏭</button>
+        <button id="clearBtn" title="清空歌词">🗑</button>
+        <button id="playlistBtn" title="歌单点歌">📋</button>
+        <button id="myPlaylistBtn" title="我的歌单">🎵</button>
+        <button id="playingListBtn" title="播放列表" style="display:none">📜</button>
+        <button id="remoteBtn" title="手机遥控器">📱</button>
+        <button id="searchToggleBtn" title="搜索歌单">🔍</button>
+        <button id="settingsBtn">⚙</button>
+        <button id="fullBtn" title="全屏">⛶</button>
+        <button id="lockBtn" title="锁定控制栏">🔒</button>
+        <button id="luckyBtn" title="抽奖点歌">🎲</button>
+        <button id="hideBtn" title="隐藏控制栏">▼</button>
+      </div>
+    </section>
+  </main>
+
+  <aside id="settings" class="settings hidden">
+    <h2>现场设置</h2>
+    <label>歌词同步偏移 <input id="offset" type="number" value="0" step="0.1"> 秒</label>
+    <label>歌词字号 <input id="fontSize" type="range" min="20" max="120" step="1" value="38"> <span id="fontSizeVal">38</span>px</label>
+    <label>显示左上角logo <input type="checkbox" id="logoToggle" checked></label>
+    <label>Logo大小 <input id="logoScale" type="range" min="0.5" max="3" step="0.1" value="1"> <span id="logoScaleVal">1.0</span>x</label>
+    <label>开始倒计时 <select id="countdownSel"><option value="0">关闭</option><option value="3">3秒</option><option value="5">5秒</option><option value="10">10秒</option></select></label>
+    <label>播放时全屏显示歌名 <input type="checkbox" id="titleSplashToggle"></label>
+    <label>互动模式（主唱/观众/合唱三色） <input type="checkbox" id="interactiveToggle"></label>
+    <button id="closeSettings">完成</button>
+  </aside>
+
+  <input id="audioFile" type="file" accept="audio/*" hidden>
+  <input id="lrcFile" type="file" accept=".lrc,.txt" hidden>
+  <!-- 锁定状态解锁按钮 -->
+  <button id="unlockBtn" class="unlockBtn hidden" title="解锁控制栏">🔓</button>
+  <audio id="audio" preload="metadata"></audio>
+
+  <!-- 歌单面板 -->
+  <div id="playlistPanel" class="playlistPanel hidden">
+    <div class="playlistHeader">
+      <span class="playlistTitle">🎵 歌单点歌</span>
+      <button id="closePlaylist" class="closePlaylist">✕</button>
+    </div>
+    <div class="singerScroll" id="singerScroll">
+      <!-- 歌手头像列表由JS生成 -->
+    </div>
+    <div class="playlistSongs" id="playlistSongs">
+      <!-- 歌曲列表由JS生成 -->
+    </div>
+  </div>
+  <div id="playlistOverlay" class="playlistOverlay hidden"></div>
+
+  <!-- 我的歌单管理面板 -->
+  <div id="myPlaylistPanel" class="myPlaylistPanel hidden">
+    <div class="mpHeader">
+      <span class="mpTitle">🎵 我的歌单</span>
+      <button id="closeMyPlaylist" class="mpClose">✕</button>
+    </div>
+
+    <!-- 歌单列表视图 -->
+    <div id="mpListView" class="mpView">
+      <div class="mpActions">
+        <button id="newPlaylistBtn" class="mpBtn primary">+ 新建歌单</button>
+        <button id="scanImportBtn" class="mpBtn">📷 扫码导入</button>
+      </div>
+      <div id="mpList" class="mpList">
+        <!-- 歌单列表由JS生成 -->
+      </div>
+    </div>
+
+    <!-- 歌单编辑视图 -->
+    <div id="mpEditView" class="mpView hidden">
+      <div class="mpEditHeader">
+        <button id="mpBackBtn" class="mpBtn small">← 返回</button>
+        <input id="mpPlaylistName" class="mpNameInput" placeholder="歌单名称">
+        <button id="mpSaveNameBtn" class="mpBtn small">保存</button>
+      </div>
+      <div class="mpEditActions">
+        <button id="mpAddSongBtn" class="mpBtn">+ 添加歌曲</button>
+        <button id="mpPlayBtn" class="mpBtn primary">▶ 播放歌单</button>
+        <button id="mpExportPngBtn" class="mpBtn">🖼 导出歌单图</button>
+        <button id="mpExportQrBtn" class="mpBtn">📱 导出二维码</button>
+        <button id="mpDeleteBtn" class="mpBtn danger">删除歌单</button>
+      </div>
+      <div class="mpPlaySettings">
+        <label>播放模式：
+          <select id="mpPlayMode">
+            <option value="manual">手动</option>
+            <option value="auto">自动</option>
+          </select>
+        </label>
+        <label>间隔：<input id="mpInterval" type="number" min="0" max="30" value="3" style="width:50px"> 秒</label>
+      </div>
+      <div id="mpEditSongs" class="mpEditSongs">
+        <!-- 歌单歌曲列表由JS生成 -->
+      </div>
+    </div>
+
+    <!-- 添加歌曲视图 -->
+    <div id="mpAddView" class="mpView hidden">
+      <div class="mpEditHeader">
+        <button id="mpAddBackBtn" class="mpBtn small">← 返回</button>
+        <span class="mpSubTitle">添加歌曲到歌单</span>
+      </div>
+      <div class="mpAddSearch">
+        <input id="mpAddFilter" placeholder="搜索歌曲…">
+      </div>
+      <div id="mpAddList" class="mpAddList">
+        <!-- 可添加歌曲列表由JS生成 -->
+      </div>
+    </div>
+  </div>
+  <div id="myPlaylistOverlay" class="myPlaylistOverlay hidden"></div>
+
+  <!-- 扫码导入界面 -->
+  <div id="scanModal" class="scanModal hidden">
+    <div class="scanContent">
+      <div class="scanHeader">
+        <span class="scanTitle">📷 扫码导入歌单</span>
+        <button id="closeScanBtn" class="scanClose">✕</button>
+      </div>
+      <div class="scanViewport">
+        <video id="scanVideo" playsinline></video>
+        <canvas id="scanCanvas" hidden></canvas>
+        <div class="scanFrame">
+          <div class="scanCorner tl"></div>
+          <div class="scanCorner tr"></div>
+          <div class="scanCorner bl"></div>
+          <div class="scanCorner br"></div>
+          <div class="scanLine"></div>
+        </div>
+      </div>
+      <div class="scanHint">将歌单二维码放入框内，自动识别</div>
+      <div class="scanActions">
+        <button id="scanAlbumBtn" class="mpBtn">🖼 从相册选择</button>
+      </div>
+      <input id="scanAlbumInput" type="file" accept="image/*" hidden>
+      <div id="scanResult" class="scanResult"></div>
+    </div>
+  </div>
+  <!-- 当前播放列表 -->
+  <div id="playingListPanel" class="playingListPanel hidden">
+    <div class="plHeader">
+      <span class="plTitle" id="plTitle">播放列表</span>
+      <button id="closePlayingList" class="plClose">✕</button>
+    </div>
+    <div id="playingListSongs" class="plSongs"></div>
+  </div>
+  <div id="playingListOverlay" class="playingListOverlay hidden"></div>
+  <!-- 遥控器配对面板（歌词端） -->
+  <div id="remotePairPanel" class="remotePairPanel hidden">
+    <div class="rpHeader">
+      <span class="rpTitle">📱 手机遥控器配对</span>
+      <button id="closeRemotePair" class="rpClose">✕</button>
+    </div>
+    <div class="rpContent">
+      <p class="rpHint">用手机扫码配对，手机就能当遥控器</p>
+      <div id="remoteQRCode" class="rpQRCode"></div>
+      <p class="rpId">配对码：<span id="remotePeerId">等待生成...</span></p>
+      <p class="rpStatus" id="remoteStatus">等待手机连接...</p>
+    </div>
+  </div>
+</div>
+<!-- 歌词结束画面 -->
+<div id="endScreen" class="endScreen">
+  <div class="endScreenLogo"></div>
+  <div class="endScreenTime" id="endTime">00:00</div>
+  <div class="endScreenDate" id="endDate"></div>
+</div>
+
+<!-- 抽奖全屏界面 -->
+<div id="luckyOverlay" class="luckyOverlay hidden">
+  <div class="luckyStage">
+    <div class="luckyTitle">🎤 随机点歌</div>
+    <div class="luckySong" id="luckySong">准备开始</div>
+    <div class="luckyArtist" id="luckyArtist">等待开始...</div>
+  </div>
+  <div class="luckyResult" id="luckyResult">
+    <div class="luckyResultNum">🎉</div>
+    <div class="luckyResultSong" id="luckyResultSong"></div>
+    <div class="luckyResultArtist" id="luckyResultArtist"></div>
+    <button id="luckyPlayBtn" class="luckyPlayBtn">▶ 开始播放</button>
+    <button id="luckyAgainBtn" class="luckyAgainBtn">🎲 再抽一次</button>
+  </div>
+  <div class="luckyPlayed" id="luckyPlayed">
+    <h4>✅ 已唱</h4>
+    <div id="luckyPlayedItems"></div>
+  </div>
+  <button id="luckyCloseBtn" class="luckyCloseBtn">✕ 退出抽奖</button>
+</div>
+<script src="https://unpkg.com/mqtt@5.3.3/dist/mqtt.min.js"></script>
+<script src="qrcode.min.js"></script>
+<script src="jsQR.min.js"></script>
+<script src="app.js?v=20260924b"></script>
+</body>
+</html>
