@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -54,6 +54,8 @@
     <span>BUILD 2026</span>
   </div>
 </div>
+<!-- 图片背景层（设置中开启） -->
+<div id="bgImageLayer" class="hidden"></div>
 <div id="app">
   <div class="logoBg" id="logoBg"></div>
   <main>
@@ -111,12 +113,16 @@
   <aside id="settings" class="settings hidden">
     <h2>现场设置</h2>
     <label>歌词同步偏移 <input id="offset" type="number" value="0" step="0.1"> 秒</label>
-    <label>歌词字号 <input id="fontSize" type="range" min="20" max="120" step="1" value="38"> <span id="fontSizeVal">38</span>px</label>
+    <label>歌词字号 <input id="fontSize" type="range" min="20" max="180" step="1" value="38"> <span id="fontSizeVal">38</span>px</label>
     <label>显示左上角logo <input type="checkbox" id="logoToggle" checked></label>
     <label>Logo大小 <input id="logoScale" type="range" min="0.5" max="3" step="0.1" value="1"> <span id="logoScaleVal">1.0</span>x</label>
     <label>开始倒计时 <select id="countdownSel"><option value="0">关闭</option><option value="3">3秒</option><option value="5">5秒</option><option value="10">10秒</option></select></label>
     <label>播放时全屏显示歌名 <input type="checkbox" id="titleSplashToggle"></label>
     <label>互动模式（主唱/观众/合唱三色） <input type="checkbox" id="interactiveToggle"></label>
+    <label>图片背景 <input type="checkbox" id="bgImageToggle"></label>
+    <label>背景图片 <button id="bgImageUploadBtn" type="button" style="width:auto;display:inline-block;padding:4px 10px;font-size:13px;margin-top:0">选择图片</button> <button id="bgImageClearBtn" type="button" style="width:auto;display:inline-block;padding:4px 10px;font-size:13px;margin-top:0;background:#555">清除</button></label>
+    <label>背景透明度 <input id="bgOpacity" type="range" min="10" max="100" step="5" value="80"> <span id="bgOpacityVal">80</span>%</label>
+    <input id="bgImageFile" type="file" accept="image/*" hidden>
     <button id="closeSettings">完成</button>
   </aside>
 
@@ -274,14 +280,16 @@
     <button id="luckyAgainBtn" class="luckyAgainBtn">🎲 再抽一次</button>
   </div>
   <div class="luckyPlayed" id="luckyPlayed">
-    <h4>✅ 已唱</h4>
+    <h4 style="display:flex;justify-content:space-between;align-items:center;">
+      <span>✅ 已唱</span>
+      <button onclick="clearHostPlayed()" style="background:#ff4444;color:#fff;border:none;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;">清空</button>
+    </h4>
     <div id="luckyPlayedItems"></div>
   </div>
   <button id="luckyCloseBtn" class="luckyCloseBtn">✕ 退出抽奖</button>
 </div>
-<script src="https://unpkg.com/mqtt@5.3.3/dist/mqtt.min.js"></script>
 <script src="qrcode.min.js"></script>
 <script src="jsQR.min.js"></script>
-<script src="app.js?v=20260924b"></script>
+<script src="app.js?v=20261017bg1"></script>
 </body>
 </html>
