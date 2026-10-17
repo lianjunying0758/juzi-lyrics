@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>桔子好声音 · 遥控器</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;}
+  body{
+    background:#0b0b0b;color:#fff;min-height:100vh;
+    display:flex;align-items:center;justify-content:center;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  .box{width:86%;max-width:380px;text-align:center;padding:40px 24px;}
+  .logo{font-size:52px;margin-bottom:12px;}
+  h1{font-size:24px;font-weight:800;margin-bottom:6px;color:#f36b0a;}
+  .tip{color:#888;font-size:14px;margin-bottom:32px;line-height:1.6;}
+  .tip b{color:#4fc3f7;font-size:16px;letter-spacing:3px;}
+  input{
+    width:100%;padding:16px;border-radius:12px;border:2px solid #333;
+    background:#151515;color:#fff;font-size:22px;text-align:center;
+    letter-spacing:6px;text-transform:uppercase;outline:none;
+    margin-bottom:18px;
+  }
+  input:focus{border-color:#f36b0a;}
+  button{
+    width:100%;padding:16px;border-radius:12px;border:none;
+    background:#f36b0a;color:#fff;font-size:18px;font-weight:700;cursor:pointer;
+  }
+  button:active{transform:scale(.97);}
+  .err{color:#ff5555;font-size:13px;margin-top:14px;min-height:18px;}
+  .foot{color:#555;font-size:12px;margin-top:28px;line-height:1.7;}
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="logo">🎮</div>
+    <h1>桔子好声音遥控器</h1>
+    <p class="tip">输入电脑屏幕上显示的<br><b>设备码</b>即可连接</p>
+    <input id="code" maxlength="8" autocomplete="off" spellcheck="false" placeholder="例如 AB3K9F">
+    <button id="btn">连 接</button>
+    <p class="err" id="err"></p>
+    <div class="foot">连接后进入遥控器页面<br>之后打开会自动记住设备码，无需再输</div>
+  </div>
+  <script>
+    const code=document.getElementById('code');
+    const btn=document.getElementById('btn');
+    const err=document.getElementById('err');
+    // 之前连过自动填
+    const saved=localStorage.getItem('juzi_remoteRoom');
+    if(saved)code.value=saved;
+    code.addEventListener('keydown',e=>{if(e.key==='Enter')connect();});
+    btn.addEventListener('click',connect);
+    function connect(){
+      const c=code.value.trim().toUpperCase();
+      if(c.length<4){
+        err.textContent='设备码太短了，看看电脑上显示的码';
+        return;
+      }
+      err.textContent='';
+      location.href='index.html?remote='+c;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+name = "juzi-lyrics"
+pages_build_output_dir = "."
+compatibility_date = "2025-01-01"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+script_name = "juzi-relay"
