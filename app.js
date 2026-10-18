@@ -1,4 +1,4 @@
-﻿/* ===== 开屏动画 ===== */
+/* ===== 开屏动画 ===== */
 (function(){
   const splash=document.querySelector('#splash');
   const percentEl=document.querySelector('#splashPercent');
@@ -16,6 +16,56 @@
     setTimeout(()=>{splash.style.display='none';},700);
   },4000);
 })();
+
+/* ===== 连接层：MQTT兼容shim（内部走Cloudflare Worker WebSocket，不依赖EMQX） ===== */
+const JUZI_RELAY_HOST=location.host || 'juzi-lyrics.pages.dev';
+function createMqttShim(room){
+  const obj={ connected:false };
+  const listeners={};
+  let ws=null, closed=false, reconnectTimer=null, retry=0, gen=0;
+  function emit(ev){ (listeners[ev]||[]).forEach(cb=>{try{cb();}catch(e){console.error(e);}}); }
+  function schedule(){
+    retry++;
+    const delay=Math.min(1000*retry,8000);
+    clearTimeout(reconnectTimer);
+    reconnectTimer=setTimeout(connectWs,delay);
+  }
+  function connectWs(){
+    // 修复：建新连接前彻底废弃旧连接（摘掉事件、close），防止僵尸连接残留在中继房间
+    if(ws){
+      try{
+        ws.onopen=null; ws.onmessage=null; ws.onerror=null; ws.onclose=null;
+        if(ws.readyState===0||ws.readyState===1) ws.close();
+      }catch(e){}
+    }
+    const myGen=++gen;
+    const proto=location.protocol==='https:'?'wss:':'ws:';
+    const wsurl=proto+'//'+JUZI_RELAY_HOST+'/ws?room='+encodeURIComponent(room);
+    try{ ws=new WebSocket(wsurl); }catch(e){ if(myGen===gen)schedule(); return; }
+    ws.onopen=()=>{ if(myGen!==gen)return; retry=0; obj.connected=true; emit('connect'); };
+    ws.onmessage=(e)=>{
+      if(myGen!==gen)return;
+      (listeners['message']||[]).forEach(cb=>{try{cb('juzi/'+room+'/x',e.data);}catch(err){console.error(err);}});
+    };
+    ws.onerror=()=>{ if(myGen!==gen)return; emit('error'); };
+    ws.onclose=()=>{
+      if(myGen!==gen)return;
+      obj.connected=false;
+      emit('close');
+      if(!closed) schedule();
+    };
+  }
+  obj.on=function(ev,cb){ (listeners[ev]||(listeners[ev]=[])).push(cb); };
+  obj.subscribe=function(){};
+  obj.publish=function(topic,msg){
+    if(ws && ws.readyState===1){ try{ ws.send(msg); }catch(e){} }
+  };
+  obj.end=function(){ closed=true; clearTimeout(reconnectTimer); if(ws){ try{ ws.onopen=null; ws.onmessage=null; ws.onerror=null; ws.onclose=null; ws.close(); }catch(e){} } };
+  connectWs();
+  return obj;
+}
+// 遥控器模式检测提前（主机端初始化要用它做守卫）
+let isRemoteMode=new URLSearchParams(location.search).has('remote');
 
 const audio=document.querySelector('#audio');
 const playBtn=document.querySelector('#playBtn'), progress=document.querySelector('#progress');
@@ -54,6 +104,7 @@ let current={title:'',lyrics:[]}, offset=0, localSongs=[];
 let virtTime=0, virtTimer=null, virtPlaying=false;
 // 更新结束画面时间
 setInterval(()=>{
+  if(isRemoteMode)return;
   const now=new Date();
   const h=String(now.getHours()).padStart(2,'0');
   const m=String(now.getMinutes()).padStart(2,'0');
@@ -65,12 +116,15 @@ setInterval(()=>{
 },1000);
 // 更新结束画面时间
 setInterval(()=>{
+  if(isRemoteMode)return;
   const now=new Date();
   const h=String(now.getHours()).padStart(2,'0');
   const m=String(now.getMinutes()).padStart(2,'0');
-  document.querySelector('#endTime').textContent=h+':'+m;
+  const endT=document.querySelector('#endTime');
+  if(endT)endT.textContent=h+':'+m;
   const days=['日','一','二','三','四','五','六'];
-  document.querySelector('#endDate').textContent=now.getFullYear()+'年'+(now.getMonth()+1)+'月'+now.getDate()+'日 星期'+days[now.getDay()];
+  const endD=document.querySelector('#endDate');
+  if(endD)endD.textContent=now.getFullYear()+'年'+(now.getMonth()+1)+'月'+now.getDate()+'日 星期'+days[now.getDay()];
 },1000);
 let hideTimer=null, countdownSec=0, countdownTimer=null, seekFbTimer=null;
 let wakeLock=null;
@@ -427,6 +481,7 @@ function onDragMove(y){
   if(Math.abs(y-dragState.startY)>DRAG_THRESHOLD)dragState.moved=true;
   if(!dragState.moved)return;
   dragState.pendingY=y;
+  dragState.lastY=y; // 手势结束时总是使用最新坐标，不丢 rAF 间隔内的最后位移
   // 用requestAnimationFrame节流，每帧只更新一次
   if(!rafId){
     rafId=requestAnimationFrame(doDragUpdate);
@@ -464,9 +519,12 @@ window.addEventListener('mouseup',onDragEnd);
 
 /* iOS高度自适应：地址栏显示/隐藏时重新计算可视高度 */
 function fixIOSHeight(){
+  if(isRemoteMode)return;
+  const mainEl=document.querySelector('main');
+  if(!mainEl)return;
   const h=window.innerHeight;
-  document.querySelector('main').style.height=h+'px';
-  document.querySelector('main').style.maxHeight=h+'px';
+  mainEl.style.height=h+'px';
+  mainEl.style.maxHeight=h+'px';
 }
 window.addEventListener('resize',fixIOSHeight);
 window.addEventListener('orientationchange',()=>{setTimeout(fixIOSHeight,300);});
@@ -484,11 +542,17 @@ stage.addEventListener('dblclick',e=>{
 
 /* ===== 加载本地歌曲 ===== */
 async function loadLocalLRC(song){
-  try{
-    const resp=await fetch(song.lrc);
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    return parseLRC(await resp.text());
-  }catch(e){console.warn('LRC加载失败:',song.lrc,e);return [];}
+  // 兜底：lrc为空或路径不存在时，自动按 歌手 - 歌名.lrc 找文件
+  const paths=[song.lrc, 'lrc/'+song.artist+' - '+song.title+'.lrc'];
+  for(const p of paths){
+    if(!p)continue;
+    try{
+      const resp=await fetch(p);
+      if(!resp.ok)throw new Error('HTTP '+resp.status);
+      return parseLRC(await resp.text());
+    }catch(e){console.warn('LRC加载失败:',p,e);}
+  }
+  return [];
 }
 async function setLocalTrack(song){
   stopVirt(); virtTime=0;
@@ -1265,10 +1329,9 @@ myPlaylistOverlay.onclick=closeMyPlaylist;
 myPlaylistPanel.addEventListener('click',e=>e.stopPropagation());
 prevBtn.onclick=e=>{e.stopPropagation();prevSong();};
 nextBtn.onclick=e=>{e.stopPropagation();nextSong();};
-document.querySelector('#clearBtn').onclick=e=>{
-  e.stopPropagation();
+function clearCurrentLyrics(skipConfirm=false){
   if(!current.lyrics.length)return;
-  if(confirm('确定清空当前歌词？')){
+  if(skipConfirm||confirm('确定清空当前歌词？')){
     if(isPlaying())togglePlay();
     current={title:'',artist:'',lyrics:[]};
     lastSplashTitle='';
@@ -1276,7 +1339,8 @@ document.querySelector('#clearBtn').onclick=e=>{
     buildLyrics();
     updateUI();
   }
-};
+}
+document.querySelector('#clearBtn').onclick=e=>{e.stopPropagation();clearCurrentLyrics();};
 
 // 歌单列表
 document.querySelector('#newPlaylistBtn').onclick=newPlaylist;
@@ -1360,6 +1424,83 @@ document.querySelector('#interactiveToggle').onchange=e=>{
   localStorage.setItem('juzi_interactive',e.target.checked);
   if(current.lyrics.length)buildLyrics();
 };
+
+/* ===== 图片背景（设置中开启，不影响其他功能） ===== */
+const bgLayer=document.querySelector('#bgImageLayer');
+const bgImageToggle=document.querySelector('#bgImageToggle');
+const bgImageUploadBtn=document.querySelector('#bgImageUploadBtn');
+const bgImageClearBtn=document.querySelector('#bgImageClearBtn');
+const bgImageFile=document.querySelector('#bgImageFile');
+const bgOpacitySel=document.querySelector('#bgOpacity');
+function applyBgImage(){
+  if(!bgLayer)return;
+  const enabled=localStorage.getItem('juzi_bgEnabled')==='true';
+  const data=localStorage.getItem('juzi_bgImage');
+  const opacity=Number(localStorage.getItem('juzi_bgOpacity')||'80');
+  bgLayer.style.opacity=opacity/100;
+  if(enabled&&data){
+    bgLayer.style.backgroundImage='url('+data+')';
+    bgLayer.classList.remove('hidden');
+    document.body.classList.add('bg-img');
+  }else{
+    bgLayer.style.backgroundImage='';
+    bgLayer.classList.add('hidden');
+    document.body.classList.remove('bg-img');
+  }
+}
+if(bgImageToggle)bgImageToggle.onchange=e=>{
+  localStorage.setItem('juzi_bgEnabled',e.target.checked);
+  applyBgImage();
+};
+if(bgImageUploadBtn)bgImageUploadBtn.onclick=()=>{if(bgImageFile)bgImageFile.click();};
+if(bgImageFile)bgImageFile.onchange=e=>{
+  const f=e.target.files[0];
+  if(!f)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      // 压缩到最长边1600px再存base64，避免超出localStorage容量
+      const maxSide=1600;
+      let w=img.width,h=img.height;
+      const scale=Math.min(1,maxSide/Math.max(w,h));
+      w=Math.max(1,Math.round(w*scale));
+      h=Math.max(1,Math.round(h*scale));
+      const cv=document.createElement('canvas');
+      cv.width=w;cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      let dataUrl=cv.toDataURL('image/jpeg',0.85);
+      try{
+        localStorage.setItem('juzi_bgImage',dataUrl);
+        localStorage.setItem('juzi_bgEnabled','true');
+        if(bgImageToggle)bgImageToggle.checked=true;
+        applyBgImage();
+        alert('背景图已设置');
+      }catch(err){
+        alert('图片太大，无法保存。请换一张更小的图片。');
+      }
+    };
+    img.onerror=()=>alert('图片读取失败');
+    img.src=reader.result;
+  };
+  reader.readAsDataURL(f);
+  e.target.value='';
+};
+if(bgImageClearBtn)bgImageClearBtn.onclick=()=>{
+  localStorage.removeItem('juzi_bgImage');
+  localStorage.setItem('juzi_bgEnabled','false');
+  if(bgImageToggle)bgImageToggle.checked=false;
+  applyBgImage();
+};
+if(bgOpacitySel){
+  bgOpacitySel.oninput=e=>{
+    localStorage.setItem('juzi_bgOpacity',e.target.value);
+    const v=document.querySelector('#bgOpacityVal');
+    if(v)v.textContent=e.target.value;
+    applyBgImage();
+  };
+  bgOpacitySel.onchange=e=>{localStorage.setItem('juzi_bgOpacity',e.target.value);applyBgImage();};
+}
 
 /* ===== 锁定控制栏 ===== */
 let isLocked=false;
@@ -1555,24 +1696,22 @@ const remoteStatusEl=document.querySelector('#remoteStatus');
 
 let mqttClient=null;
 let roomId='';
-let isRemoteMode=false;
+// isRemoteMode 已在文件开头提前检测
 
-// 检查是否是遥控器模式（URL带?remote=xxx，或上次连接过自动恢复）
+// 检查是否是遥控器模式（只认URL带?remote=xxx，主页永远显示播放器）
 (function checkRemoteMode(){
   const params=new URLSearchParams(location.search);
   let remoteId=params.get('remote');
-  // 如果URL没带，但localStorage有保存的，自动用上次的
-  if(!remoteId)remoteId=localStorage.getItem('juzi_remoteRoom');
   if(!remoteId)return;
   isRemoteMode=true;
   roomId=remoteId;
-  // 保存到localStorage，下次自动连
-  localStorage.setItem('juzi_remoteRoom',remoteId);
   // 隐藏所有界面，只显示控制界面
   document.body.innerHTML='';
   const app=document.createElement('div');
+  app.className='remoteApp';
   app.style.cssText='display:flex;flex-direction:column;align-items:center;height:100vh;background:#0b0b0b;color:#fff;padding:16px;gap:16px;overflow-y:auto;';
   app.innerHTML=`
+    <div class="rMain">
     <h2 style="margin:0 0 8px 0">🎮 遥控器</h2>
     <p id="rSong" style="color:#4fc3f7;margin:0;font-size:16px;">等待连接...</p>
     
@@ -1586,7 +1725,7 @@ let isRemoteMode=false;
     </div>
     
     <!-- 播放控制 -->
-    <div style="display:flex;gap:20px;align-items:center;margin:10px 0;">
+    <div class="rPlayRow" style="display:flex;gap:20px;align-items:center;margin:10px 0;">
       <button id="rPrev" style="width:60px;height:60px;border-radius:50%;border:none;background:#333;color:#fff;font-size:22px;cursor:pointer;">⏮</button>
       <button id="rPlay" style="width:80px;height:80px;border-radius:50%;border:none;background:#4fc3f7;color:#000;font-size:32px;cursor:pointer;">▶</button>
       <button id="rNext" style="width:60px;height:60px;border-radius:50%;border:none;background:#333;color:#fff;font-size:22px;cursor:pointer;">⏭</button>
@@ -1594,37 +1733,41 @@ let isRemoteMode=false;
     
     <!-- 快进快退 -->
     <div style="display:flex;gap:10px;">
-      <button data-cmd="seek-back" style="padding:10px 16px;border-radius:8px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">⏪ -0.5s</button>
-      <button data-cmd="seek-forward" style="padding:10px 16px;border-radius:8px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">+0.5s ⏩</button>
+      <button data-cmd="seek-back" style="padding:10px 16px;border-radius:8px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">⏪ 后退 0.5 秒</button>
+      <button data-cmd="seek-forward" style="padding:10px 16px;border-radius:8px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">前进 0.5 秒 ⏩</button>
     </div>
     
     <!-- 字号调整 -->
     <div style="display:flex;gap:10px;align-items:center;">
-      <button data-cmd="font-down" style="width:44px;height:44px;border-radius:8px;border:none;background:#333;color:#fff;font-size:18px;cursor:pointer;">A-</button>
-      <span style="color:#888;font-size:14px;">字号</span>
-      <button data-cmd="font-up" style="width:44px;height:44px;border-radius:8px;border:none;background:#333;color:#fff;font-size:18px;cursor:pointer;">A+</button>
+      <button data-cmd="font-down" aria-label="缩小歌词字号" style="width:44px;height:44px;border-radius:8px;border:none;background:#333;color:#fff;font-size:18px;cursor:pointer;">A−</button>
+      <span style="color:#888;font-size:14px;">字号 <b id="rFontSizeValue">38</b></span>
+      <input id="rFontSize" type="range" min="20" max="180" step="1" value="38" aria-label="歌词字号" style="width:min(42vw,220px);accent-color:#4fc3f7;">
+      <button data-cmd="font-up" aria-label="放大歌词字号" style="width:44px;height:44px;border-radius:8px;border:none;background:#333;color:#fff;font-size:18px;cursor:pointer;">A+</button>
     </div>
     
     <!-- 功能按钮 -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:400px;margin-top:10px;">
+    <div class="rFnGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:400px;margin-top:10px;">
       <button data-cmd="fullscreen" style="padding:12px;border-radius:10px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">⛶ 全屏</button>
       <button data-cmd="lock" style="padding:12px;border-radius:10px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">🔒 锁定</button>
       <button data-cmd="clear" style="padding:12px;border-radius:10px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">🗑 清空</button>
       <button id="rShowPlaylist" style="padding:12px;border-radius:10px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">📜 列表</button>
       <button id="rShowSearch" style="padding:12px;border-radius:10px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">🔍 搜索</button>
       <button id="rShowSettings" style="padding:12px;border-radius:10px;border:none;background:#333;color:#fff;font-size:14px;cursor:pointer;">⚙️ 设置</button>
-      <button id="rShowLucky" style="padding:12px;border-radius:10px;border:none;background:#f36b0a;color:#fff;font-size:14px;cursor:pointer;grid-column:span 2;">🎲 抽奖模式</button>
+      <button id="rShowLucky" style="padding:12px;border-radius:10px;border:none;background:#f36b0a;color:#fff;font-size:14px;cursor:pointer;grid-column:span 2;">🎵 歌单抽奖</button>
+      <button id="rShowEventLucky" style="padding:12px;border-radius:10px;border:none;background:#a64dff;color:#fff;font-size:14px;cursor:pointer;grid-column:span 2;">🎟 现场抽奖遥控</button>
     </div>
     
     <!-- 倒计时设置 -->
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
       <span style="color:#888;font-size:14px;">倒计时:</span>
       <button data-cmd="countdown-0" style="padding:8px 12px;border-radius:6px;border:none;background:#333;color:#fff;font-size:13px;cursor:pointer;">关</button>
-      <button data-cmd="countdown-3" style="padding:8px 12px;border-radius:6px;border:none;background:#333;color:#fff;font-size:13px;cursor:pointer;">3s</button>
-      <button data-cmd="countdown-5" style="padding:8px 12px;border-radius:6px;border:none;background:#333;color:#fff;font-size:13px;cursor:pointer;">5s</button>
-      <button data-cmd="countdown-10" style="padding:8px 12px;border-radius:6px;border:none;background:#333;color:#fff;font-size:13px;cursor:pointer;">10s</button>
+      <button data-cmd="countdown-3" style="padding:8px 12px;border-radius:6px;border:none;background:#333;color:#fff;font-size:13px;cursor:pointer;">3秒</button>
+      <button data-cmd="countdown-5" style="padding:8px 12px;border-radius:6px;border:none;background:#333;color:#fff;font-size:13px;cursor:pointer;">5秒</button>
+      <button data-cmd="countdown-10" style="padding:8px 12px;border-radius:6px;border:none;background:#333;color:#fff;font-size:13px;cursor:pointer;">10秒</button>
     </div>
     
+    </div>
+    <div class="rPanels">
     <!-- 搜索面板（默认隐藏） -->
     <div id="rSearchPanel" style="width:100%;max-width:400px;margin-top:10px;display:none;">
       <input id="rSearch" placeholder="搜索歌曲..." style="width:100%;padding:10px;border-radius:8px;border:none;background:#222;color:#fff;font-size:14px;box-sizing:border-box;">
@@ -1670,7 +1813,7 @@ let isRemoteMode=false;
           <button class="luckyTabBtn active" data-tab="artist" style="flex:1;padding:8px;border-radius:8px;border:none;background:#f36b0a;color:#fff;font-size:12px;cursor:pointer;">按歌手选</button>
           <button class="luckyTabBtn" data-tab="search" style="flex:1;padding:8px;border-radius:8px;border:none;background:#333;color:#fff;font-size:12px;cursor:pointer;">搜索选</button>
           <button class="luckyTabBtn" data-tab="selected" style="flex:1;padding:8px;border-radius:8px;border:none;background:#333;color:#fff;font-size:12px;cursor:pointer;">已选(<span id="selCount">0</span>)</button>
-          <button class="luckyTabBtn" data-tab="played" style="flex:1;padding:8px;border-radius:8px;border:none;background:#333;color:#fff;font-size:12px;cursor:pointer;">已唱</button>
+
         </div>
         <div id="luckyArtistTab"><div id="luckyArtistGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;"></div><div id="luckyArtistSongs" style="display:none;max-height:300px;overflow-y:auto;"></div></div>
         <div id="luckySearchTab" style="display:none;margin-bottom:10px;">
@@ -1682,25 +1825,43 @@ let isRemoteMode=false;
           <div style="font-size:13px;color:#888;margin-bottom:8px;">点歌曲可删除，共<span id="selCount2">0</span>首</div>
           <div id="luckySelectedList" style="max-height:300px;overflow-y:auto;"></div>
         </div>
-        <div id="luckyPlayedTab" style="display:none;">
-          <div id="luckyPlayedList" style="max-height:300px;overflow-y:auto;"></div>
-        </div>
+
         <button id="rLuckyClose" style="width:100%;padding:12px;border-radius:10px;border:none;background:#333;color:#888;font-size:14px;cursor:pointer;margin-top:10px;">退出抽奖</button>
       </div>
     </div>
-    
+    <section id="rEventLuckyPanel" style="width:100%;max-width:400px;margin-top:10px;display:none;background:#171717;border:1px solid #333;border-radius:14px;padding:14px;">
+      <h3 style="font-size:16px;margin:0 0 6px;color:#d8b6ff;">🎟 现场观众抽奖</h3>
+      <p style="font-size:12px;color:#999;line-height:1.5;margin:0 0 12px;">输入主持人页面显示的房间码，即可远程设置并控制开奖。</p>
+      <div style="display:flex;gap:8px;">
+        <input id="rEventRoom" maxlength="8" autocomplete="off" placeholder="主持人房间码" style="flex:1;min-width:0;padding:12px;border:1px solid #444;border-radius:10px;background:#222;color:#fff;font-size:16px;text-transform:uppercase;">
+        <button id="rEventConnect" style="padding:10px 14px;border:0;border-radius:10px;background:#4fc3f7;color:#081018;font-weight:700;">连接</button>
+      </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;">
+        <button id="rEventEnter" style="min-height:46px;border:0;border-radius:10px;background:#7843ad;color:#fff;font-size:13px;font-weight:700;">进入主持台</button>
+        <button id="rEventExit" style="min-height:46px;border:0;border-radius:10px;background:#333;color:#eee;font-size:13px;font-weight:700;">退出主持台</button>
+      </div><div id="rEventStatus" role="status" style="margin:10px 0;color:#999;font-size:13px;">尚未连接主持人</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0;">
+        <label style="font-size:12px;color:#aaa;">开奖方式
+          <select id="rEventMode" style="display:block;width:100%;margin-top:6px;padding:10px;border-radius:9px;background:#222;color:#fff;border:1px solid #444;font-size:14px;">
+            <option value="auto">自动停止</option><option value="manual">手动停止选中</option>
+          </select>
+        </label>
+        <label style="font-size:12px;color:#aaa;">中奖人数
+          <input id="rEventCount" type="number" min="1" max="99" step="1" value="1" inputmode="numeric" style="display:block;width:100%;margin-top:6px;padding:10px;border-radius:9px;background:#222;color:#fff;border:1px solid #444;font-size:16px;">
+        </label>
+      </div>
+      <button id="rEventStart" style="width:100%;min-height:50px;border:0;border-radius:11px;background:#f36b0a;color:#fff;font-size:16px;font-weight:700;">开始现场抽奖</button>
+      <button id="rEventStop" style="width:100%;min-height:50px;margin-top:8px;border:0;border-radius:11px;background:#7536aa;color:#fff;font-size:16px;font-weight:700;">停止并选中当前观众</button>
+      <p style="font-size:11px;color:#777;line-height:1.5;margin:10px 0 0;">停止按钮仅在开奖滚动时生效。</p>
+    </section>
+    </div>
     <p id="rStatus" style="color:#888;font-size:13px;margin-top:16px;">正在连接...</p>
   `;
   document.body.appendChild(app);
 
   // 连接MQTT
   // MQTT连接
-  mqttClient=mqtt.connect('wss://haecf9f6.ala.cn-shenzhen.emqxsl.cn:8084/mqtt',{
-    clientId:'juzi_remote_'+Math.random().toString(16).slice(2,8),username:'juzi',password:'Lian0708',
-    connectTimeout:5000,
-    reconnectPeriod:3000,
-    clean:true
-  });
+  mqttClient=createMqttShim(roomId);
   mqttClient.on('connect',()=>{
     document.querySelector('#rStatus').textContent='✅ 已连接！正在加载歌单...';
     document.querySelector('#rStatus').style.color='#4fc3f7';
@@ -1771,9 +1932,8 @@ let isRemoteMode=false;
     document.querySelector('#rStatus').style.color='#f44';
   });
   mqttClient.on('close',()=>{
-    document.querySelector('#rStatus').textContent='⚠️ 连接断开，3秒后重连...';
+    document.querySelector('#rStatus').textContent='⚠️ 连接断开，正在重连...';
     document.querySelector('#rStatus').style.color='#f44';
-    setTimeout(()=>location.reload(),3000);
   });
 
   let rDragging=false;
@@ -1789,7 +1949,14 @@ let isRemoteMode=false;
   document.querySelector('#rPlay').onclick=()=>sendCmd('playpause');
 
   document.querySelectorAll('[data-cmd]').forEach(btn=>{
-    btn.onclick=()=>sendCmd(btn.dataset.cmd);
+    btn.onclick=()=>{
+      if(btn.dataset.cmd==='font-up'||btn.dataset.cmd==='font-down'){
+        const slider=document.querySelector('#rFontSize');
+        slider.value=Math.max(20,Math.min(180,Number(slider.value)+(btn.dataset.cmd==='font-up'?2:-2)));
+        document.querySelector('#rFontSizeValue').textContent=slider.value;
+      }
+      sendCmd(btn.dataset.cmd);
+    };
   });
 
   // 面板切换
@@ -1855,7 +2022,7 @@ let isRemoteMode=false;
     const box=document.querySelector('#luckyArtistSongs');
     box.style.display='block';
     box.innerHTML=`<button onclick="backToLuckyArtists()" style="width:100%;padding:8px;border-radius:6px;border:none;background:#333;color:#fff;font-size:12px;cursor:pointer;margin-bottom:8px;">← 返回歌手列表</button><button onclick="luckyAddHot('${a}')" style="width:100%;padding:10px;border-radius:8px;border:none;background:#f36b0a;color:#fff;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;">🔥 一键加热门精选</button><button onclick="luckyAddAll('${a}')" style="width:100%;padding:8px;border-radius:6px;border:none;background:#333;color:#aaa;font-size:12px;cursor:pointer;margin-bottom:8px;">全选此歌手所有歌</button>`;
-    const list=(window.remoteAllSongs||[]).filter(s=>s.artist.includes(a));
+    const list=(window.remoteAllSongs||[]).filter(s=>s.artist===a);
     list.forEach(s=>{
       const k=luckyKey(s);
       const div=document.createElement('div');
@@ -1871,12 +2038,22 @@ let isRemoteMode=false;
   };
   window.luckyAddHot=(a)=>{
     const hot=LUCKY_HOT[a]||[];
-    (window.remoteAllSongs||[]).filter(s=>hot.includes(s.title)&&s.artist.includes(a)).forEach(s=>luckySelected.set(luckyKey(s),s));
+    // 先清掉之前加的这个歌手的歌
+    [...luckySelected.keys()].forEach(k=>{
+      if(k.endsWith('|||'+a)) luckySelected.delete(k);
+    });
+    // 先按歌手过滤，再找热门歌，绝对不串
+    const artistSongs=(window.remoteAllSongs||[]).filter(s=>s.artist===a);
+    artistSongs.forEach(s=>{
+      if(hot.includes(s.title)){
+        luckySelected.set(luckyKey(s),s);
+      }
+    });
     renderLuckySelected();
     showLuckyArtist(a);
   };
   window.luckyAddAll=(a)=>{
-    (window.remoteAllSongs||[]).filter(s=>s.artist.includes(a)).forEach(s=>luckySelected.set(luckyKey(s),s));
+    (window.remoteAllSongs||[]).filter(s=>s.artist===a).forEach(s=>luckySelected.set(luckyKey(s),s));
     renderLuckySelected();
     showLuckyArtist(a);
   };
@@ -1884,6 +2061,11 @@ let isRemoteMode=false;
     const k=luckyKey(s);
     if(luckySelected.has(k))luckySelected.delete(k);else luckySelected.set(k,s);
     renderLuckySelected();
+    // 选完自动清空搜索框，方便下一次搜
+    const inp=document.querySelector('#luckySearchInput');
+    if(inp)inp.value='';
+    const res=document.querySelector('#luckySearchResults');
+    if(res)res.innerHTML='<div style="text-align:center;color:#666;padding:30px;font-size:13px;">输入歌名/歌手/拼音搜索</div>';
   }
   function renderLuckySearch(q){
     const f=q.trim().toLowerCase();
@@ -1931,9 +2113,8 @@ let isRemoteMode=false;
     }
   };
   function renderLuckyPlayed(){
-    console.log('renderLuckyPlayed called, count:',remotePlayed.length);
     const el=document.querySelector('#luckyPlayedList');
-    if(!el){console.log('luckyPlayedList element not found');return;}
+    if(!el)return;
     let html='';
     if(remotePlayed.length===0){
       html='<div style="text-align:center;color:#666;padding:30px;font-size:13px;">还没抽过歌</div>';
@@ -1953,9 +2134,7 @@ let isRemoteMode=false;
       document.querySelector('#luckyArtistTab').style.display=t==='artist'?'block':'none';
       document.querySelector('#luckySearchTab').style.display=t==='search'?'block':'none';
       document.querySelector('#luckySelectedTab').style.display=t==='selected'?'block':'none';
-      document.querySelector('#luckyPlayedTab').style.display=t==='played'?'block':'none';
       if(t==='selected')renderLuckySelected();
-      if(t==='played')renderLuckyPlayed();
     };
   });
   document.querySelector('#luckySearchInput').oninput=(e)=>renderLuckySearch(e.target.value);
@@ -1965,8 +2144,8 @@ let isRemoteMode=false;
     document.querySelector('#rPlaylistPanel').style.display='none';
     document.querySelector('#rSettingsPanel').style.display='none';
     renderLuckyArtistGrid();
-    // 通知电脑打开抽奖页面
-    mqttClient.publish('juzi/'+remoteId+'/cmd',JSON.stringify({type:'lucky-open'}));
+    // 通知电脑打开抽奖页面，同时带上当前已选的歌单
+    mqttClient.publish('juzi/'+remoteId+'/cmd',JSON.stringify({type:'lucky-open',songs:Array.from(luckySelected.values())}));
   };
   document.querySelector('#rLuckyClose').onclick=()=>{
     document.querySelector('#rLuckyPanel').style.display='none';
@@ -2082,6 +2261,60 @@ let isRemoteMode=false;
     sendCmd('toggle-interactive');
   };
 
+  // 字号滑杆：拖动时实时预览并同步到主机。
+  const remoteFontSize=document.querySelector('#rFontSize');
+  const remoteFontSizeValue=document.querySelector('#rFontSizeValue');
+  remoteFontSize.oninput=()=>{remoteFontSizeValue.textContent=remoteFontSize.value;sendCmd('set-font-size',{value:Number(remoteFontSize.value)});};
+
+  // 现场抽奖远程主控：与现有 juzi-lucky 主持端共享 MQTT 控制通道。
+  let eventLuckyClient=null,eventLuckyRoom='';
+  const eventRoomInput=document.querySelector('#rEventRoom');
+  const eventStatus=document.querySelector('#rEventStatus');
+  eventRoomInput.value=(localStorage.getItem('luckyRemoteRoom')||'').toUpperCase();
+  const setEventStatus=(text,color='#999')=>{eventStatus.textContent=text;eventStatus.style.color=color;};
+  document.querySelector('#rShowEventLucky').onclick=()=>{
+    const panel=document.querySelector('#rEventLuckyPanel');
+    panel.style.display=panel.style.display==='none'?'block':'none';
+    document.querySelector('#rSearchPanel').style.display='none';
+    document.querySelector('#rPlaylistPanel').style.display='none';
+    document.querySelector('#rSettingsPanel').style.display='none';
+    document.querySelector('#rLuckyPanel').style.display='none';
+  };
+  document.querySelector('#rEventConnect').onclick=()=>{
+    const code=eventRoomInput.value.trim().toUpperCase();
+    if(code.length<4){setEventStatus('请输入主持人页面显示的房间码','#ff8a80');return;}
+    eventRoomInput.value=code;localStorage.setItem('luckyRemoteRoom',code);
+    if(eventLuckyClient){try{eventLuckyClient.end(true);}catch(e){}eventLuckyClient=null;}
+    setEventStatus('正在连接主持人…','#ffd180');
+    const connectClient=()=>{
+      if(!window.mqtt){setEventStatus('抽奖控制模块加载失败，请刷新重试','#ff8a80');return;}
+      eventLuckyRoom=code;
+      eventLuckyClient=window.mqtt.connect('wss://haecf9f6.ala.cn-shenzhen.emqxsl.cn:8084/mqtt',{username:'juzi',password:'Lian0708',clientId:'luckyRemote_'+Math.random().toString(36).slice(2,10),clean:true,reconnectPeriod:2000,connectTimeout:8000});
+      eventLuckyClient.on('connect',()=>{eventLuckyClient.subscribe('lucky/'+eventLuckyRoom+'/control/state',{qos:1});setEventStatus('已连接抽奖服务 · 正在联系主持端','#4fc3f7');eventLuckyClient.publish('lucky/'+eventLuckyRoom+'/control',JSON.stringify({type:'remote-connect'}),{qos:1});});
+      eventLuckyClient.on('message',(topic,payload)=>{try{const m=JSON.parse(payload.toString());if(m.type==='remote-state'){if(m.ok===false){setEventStatus(m.message||'主持端暂不可操作','#ff8a80');return;}if(m.mode)document.querySelector('#rEventMode').value=m.mode;if(m.count)document.querySelector('#rEventCount').value=m.count;const suffix=Number.isFinite(Number(m.available))?' · 可抽 '+m.available+' 人':'';setEventStatus((m.message||'已连接主持端，可开始控制')+suffix,'#a5d6a7');}}catch(e){}});
+      eventLuckyClient.on('close',()=>setEventStatus('抽奖服务断开，正在重连…','#ff8a80'));
+      eventLuckyClient.on('error',()=>setEventStatus('连接异常，请检查房间码或网络','#ff8a80'));
+    };
+    if(window.mqtt){connectClient();}else{
+      let script=document.querySelector('#rEventMqttScript');
+      if(!script){script=document.createElement('script');script.id='rEventMqttScript';script.src='https://juzi-lucky.pages.dev/assets/mqtt.min.js';script.onload=connectClient;script.onerror=()=>setEventStatus('抽奖控制模块加载失败，请刷新重试','#ff8a80');document.head.appendChild(script);}
+      else{script.addEventListener('load',connectClient,{once:true});}
+    }
+  };
+  const sendEventControl=(message)=>{
+    if(!eventLuckyClient||!eventLuckyClient.connected){setEventStatus('请先连接主持人房间','#ff8a80');return false;}
+    eventLuckyClient.publish('lucky/'+eventLuckyRoom+'/control',JSON.stringify(message),{qos:1});return true;
+  };
+  document.querySelector('#rEventEnter').onclick=()=>sendCmd('live-lucky-open');
+  document.querySelector('#rEventExit').onclick=()=>sendCmd('live-lucky-close');  document.querySelector('#rEventMode').onchange=()=>sendEventControl({type:'remote-settings',mode:document.querySelector('#rEventMode').value,count:Number(document.querySelector('#rEventCount').value)||1});
+  document.querySelector('#rEventCount').onchange=()=>sendEventControl({type:'remote-settings',mode:document.querySelector('#rEventMode').value,count:Number(document.querySelector('#rEventCount').value)||1});
+  document.querySelector('#rEventStart').onclick=()=>{
+    const count=Math.max(1,Math.min(99,Math.floor(Number(document.querySelector('#rEventCount').value)||1)));
+    document.querySelector('#rEventCount').value=count;
+    sendEventControl({type:'remote-start',mode:document.querySelector('#rEventMode').value,count});
+  };
+  document.querySelector('#rEventStop').onclick=()=>sendEventControl({type:'remote-stop'});
+
   // 进度条拖动
   const progressBar=document.querySelector('#rProgress');
   progressBar.onpointerdown=()=>{rDragging=true;};
@@ -2090,52 +2323,66 @@ let isRemoteMode=false;
     sendCmd('seek',{value:parseFloat(progressBar.value)});
   };
 })();
+// 固定设备码：生成一次存本地，之后永远不变
+function getFixedRoomId(){
+  let id=localStorage.getItem('juzi_fixedRoom');
+  if(!id){
+    id=Math.random().toString(36).slice(2,8).toUpperCase();
+    localStorage.setItem('juzi_fixedRoom',id);
+  }
+  return id;
+}
+// 确保主机已连接MQTT（页面加载时就自动连接，设备码固定，手机随时可连）
+function ensureHostConnected(){
+  if(mqttClient&&mqttClient.connected)return;
+  if(isRemoteMode)return;
+  // 修复：旧 shim 还在重连中（connected=false）时，先彻底销毁再重建，杜绝僵尸连接
+  if(mqttClient){
+    try{ mqttClient.end(); }catch(e){}
+    mqttClient=null;
+  }
+  roomId=getFixedRoomId();
+  if(remotePeerIdEl)remotePeerIdEl.textContent=roomId;
+  remoteStatusEl.textContent='正在连接服务器...';
+  mqttClient=createMqttShim(roomId);
+  mqttClient.on('connect',()=>{
+    remoteStatusEl.textContent='✅ 等待手机连接...';
+    remoteStatusEl.style.color='#4fc3f7';
+    mqttClient.subscribe('juzi/'+roomId+'/cmd');
+  });
+  mqttClient.on('message',(topic,msg)=>{
+    const data=JSON.parse(msg.toString());
+    handleRemoteCmd(data);
+  });
+  mqttClient.on('error',()=>{
+    remoteStatusEl.textContent='❌ 连接失败，请刷新重试';
+    remoteStatusEl.style.color='#f44';
+  });
+}
 // 歌词端：打开配对面板
 if(remoteBtn){
   remoteBtn.onclick=()=>{
     remotePairPanel.classList.remove('hidden');
-    if(!mqttClient||!mqttClient.connected){
-      roomId=Math.random().toString(36).slice(2,8).toUpperCase();
-      remotePeerIdEl.textContent=roomId;
-      // 生成二维码
-      remoteQRCode.innerHTML='';
-      const qr=qrcode(0,'M');
-      qr.addData(location.origin+location.pathname+'?remote='+roomId);
-      qr.make();
-      const modules=qr.getModuleCount();
-      const cellSize=Math.floor(180/modules);
-      let html='<table style="border:0;margin:0 auto;border-collapse:collapse;">';
-      for(let r=0;r<modules;r++){
-        html+='<tr style="height:'+cellSize+'px;">';
-        for(let c=0;c<modules;c++){
-          html+='<td style="width:'+cellSize+'px;border:0;padding:0;'+(qr.isDark(r,c)?'background:#000;':'background:#fff;')+'"></td>';
-        }
-        html+='</tr>';
+    ensureHostConnected();
+    roomId=getFixedRoomId();
+    remotePeerIdEl.textContent=roomId;
+    // 生成二维码（码固定，二维码永远有效）
+    remoteQRCode.innerHTML='';
+    const qr=qrcode(0,'M');
+    qr.addData(location.origin+location.pathname+'?remote='+roomId);
+    qr.make();
+    const modules=qr.getModuleCount();
+    const cellSize=Math.floor(180/modules);
+    let html='<table style="border:0;margin:0 auto;border-collapse:collapse;">';
+    for(let r=0;r<modules;r++){
+      html+='<tr style="height:'+cellSize+'px;">';
+      for(let c=0;c<modules;c++){
+        html+='<td style="width:'+cellSize+'px;border:0;padding:0;'+(qr.isDark(r,c)?'background:#000;':'background:#fff;')+'"></td>';
       }
-      html+='</table>';
-      remoteQRCode.innerHTML=html;
-      // 连接MQTT
-      remoteStatusEl.textContent='正在连接服务器...';
-      mqttClient=mqtt.connect('wss://haecf9f6.ala.cn-shenzhen.emqxsl.cn:8084/mqtt',{
-        clientId:'juzi_host_'+Math.random().toString(16).slice(2,8),username:'juzi',password:'Lian0708',
-        connectTimeout:5000,
-        reconnectPeriod:3000,
-        clean:true
-      });
-      mqttClient.on('connect',()=>{
-        remoteStatusEl.textContent='✅ 等待手机扫码连接...';
-        remoteStatusEl.style.color='#4fc3f7';
-        mqttClient.subscribe('juzi/'+roomId+'/cmd');
-      });
-      mqttClient.on('message',(topic,msg)=>{
-        const data=JSON.parse(msg.toString());
-        handleRemoteCmd(data);
-      });
-      mqttClient.on('error',()=>{
-        remoteStatusEl.textContent='❌ 连接失败，请刷新重试';
-        remoteStatusEl.style.color='#f44';
-      });
+      html+='</tr>';
     }
+    html+='</table>';
+    remoteQRCode.innerHTML=html;
   };
   closeRemotePairBtn.onclick=()=>{
     remotePairPanel.classList.add('hidden');
@@ -2199,6 +2446,18 @@ function handleRemoteCmd(data){
     case 'font-down':
       adjustFontSize(-2);
       break;
+    case 'live-lucky-open':
+      setLiveLuckyHostVisible(true);
+      break;
+    case 'live-lucky-close':
+      setLiveLuckyHostVisible(false);
+      break;    case 'set-font-size':
+      if(data.payload&&Number.isFinite(Number(data.payload.value))){
+        const size=Math.max(20,Math.min(180,Math.round(Number(data.payload.value))));
+        const sel=document.querySelector('#fontSize');
+        if(sel){sel.value=size;applyFontSize(size);const val=document.querySelector('#fontSizeVal');if(val)val.textContent=size;}
+      }
+      break;
     case 'fullscreen':
       const btn=document.querySelector('#fullBtn');
       if(btn)btn.click();
@@ -2208,14 +2467,16 @@ function handleRemoteCmd(data){
       if(lbtn)lbtn.click();
       break;
     case 'clear':
-      const cbtn=document.querySelector('#clearBtn');
-      if(cbtn)cbtn.click();
+      clearCurrentLyrics(true);
       break;
     case 'lucky-open':
       luckyOverlay.classList.remove('hidden');
       document.querySelector('#luckyResult').classList.remove('show');
       document.querySelector('#luckySong').textContent='准备开始';
       document.querySelector('#luckyArtist').textContent='等待手机操作...';
+      break;
+    case 'lucky-pool':
+      barragePool=data.songs||[];
       break;
     case 'lucky-start':
       luckyOverlay.classList.remove('hidden');
@@ -2229,6 +2490,7 @@ function handleRemoteCmd(data){
         const s=window._luckyResult;
         // 加入已唱
         luckyPlayed.push(s);
+        saveHostPlayed();
         const item=document.createElement('div');
         item.textContent=s.title;
         document.querySelector('#luckyPlayedItems').appendChild(item);
@@ -2268,6 +2530,23 @@ function handleRemoteCmd(data){
       break;
     case 'remote-connected':
       remotePairPanel.classList.add('hidden');
+      // 主动把当前播放状态推给新连上的遥控器
+      if(mqttClient&&mqttClient.connected){
+        if(current&&current.title){
+          mqttClient.publish('juzi/'+roomId+'/state',JSON.stringify({
+            type:'playState',
+            playing:isPlaying(),
+            song:current.title+' - '+(current.artist||'')
+          }));
+        }
+        if(currentPlaylist&&currentPlaylist.songs.length>0){
+          mqttClient.publish('juzi/'+roomId+'/state',JSON.stringify({
+            type:'playlistData',
+            songs:currentPlaylist.songs.map(s=>({title:s.title,artist:s.artist})),
+            current:currentPlaylist.songs.findIndex(s=>s.file===current.file)
+          }));
+        }
+      }
       break;
     case 'get-all-songs':
       console.log('遥控器请求歌单，当前歌曲数:',localSongs.length);
@@ -2406,7 +2685,7 @@ function adjustFontSize(delta){
   let cur=parseInt(sel.value);
   let next=cur+delta;
   if(next<20)next=20;
-  if(next>120)next=120;
+  if(next>180)next=180;
   sel.value=next;
   applyFontSize(next);
   // 更新显示
@@ -2416,6 +2695,7 @@ function adjustFontSize(delta){
 }
 // 恢复本地保存的设置
 (function(){
+  if(isRemoteMode)return;
   const fs=localStorage.getItem('juzi_fontSize');
   if(fs){fontSizeSel.value=fs;applyFontSize(fs);const v=document.querySelector('#fontSizeVal');if(v)v.textContent=fs;}
   const ls=localStorage.getItem('juzi_logoShow');
@@ -2428,13 +2708,48 @@ function adjustFontSize(delta){
   if(ts!==null){titleSplashEnabled=ts==='true';document.querySelector('#titleSplashToggle').checked=titleSplashEnabled;}
   const it=localStorage.getItem('juzi_interactive');
   if(it!==null){interactiveMode=it==='true';document.querySelector('#interactiveToggle').checked=interactiveMode;const legend=document.querySelector('#interactiveLegend');if(interactiveMode)legend.classList.remove('hidden');else legend.classList.add('hidden');}
+  // 图片背景恢复
+  const bgEn=localStorage.getItem('juzi_bgEnabled');
+  if(bgEn!==null&&document.querySelector('#bgImageToggle'))document.querySelector('#bgImageToggle').checked=bgEn==='true';
+  const bgOp=localStorage.getItem('juzi_bgOpacity');
+  if(bgOp&&document.querySelector('#bgOpacity')){document.querySelector('#bgOpacity').value=bgOp;const bv=document.querySelector('#bgOpacityVal');if(bv)bv.textContent=bgOp;}
+  applyBgImage();
 })();
 /* ===== 抽奖功能 ===== */
-let luckyPool=[],luckyRollTimer=null,luckyPlayed=[];
+let luckyPool=[],luckyRollTimer=null;
+let luckyPlayed=JSON.parse(localStorage.getItem('host_luckyPlayed')||'[]');
+function saveHostPlayed(){
+  localStorage.setItem('host_luckyPlayed',JSON.stringify(luckyPlayed));
+}
+function clearHostPlayed(){
+  if(!confirm('确定清空已唱歌单吗？'))return;
+  luckyPlayed=[];
+  saveHostPlayed();
+  document.querySelector('#luckyPlayedItems').innerHTML='';
+  if(window.mqttClient&&mqttClient.connected){
+    mqttClient.publish('juzi/'+roomId+'/state',JSON.stringify({type:'played-list',songs:luckyPlayed}));
+  }
+}
 const luckyOverlay=document.querySelector('#luckyOverlay');
 const luckyBtn=document.querySelector('#luckyBtn');
 
-luckyBtn.onclick=()=>{
+// 初始化渲染已唱列表
+(function(){
+  const box=document.querySelector('#luckyPlayedItems');
+  if(box){
+    luckyPlayed.forEach(s=>{
+      const item=document.createElement('div');
+      item.textContent=s.title;
+      box.appendChild(item);
+    });
+  }
+})();
+
+// 页面加载即自动用固定设备码在线，手机输码/扫码随时可连
+if(!isRemoteMode){
+  setTimeout(()=>{try{ensureHostConnected();}catch(e){console.log('auto host err',e);}},1500);
+}
+if(luckyBtn)luckyBtn.onclick=()=>{
   luckyOverlay.classList.remove('hidden');
   luckyPool=localSongs.slice();
   // 生成抽奖配对二维码
@@ -2460,7 +2775,21 @@ luckyBtn.onclick=()=>{
     document.querySelector('#luckySong').outerHTML='<div id="luckySong">'+html+'</div>';
   }
 };
-document.querySelector('#luckyCloseBtn').onclick=()=>{
+function setLiveLuckyHostVisible(show){
+  const panel=document.querySelector('#eventLuckyHostPanel');
+  const frame=document.querySelector('#eventLuckyHostFrame');
+  if(!panel||!frame)return;
+  if(show&&frame.src==='about:blank')frame.src=frame.dataset.src;
+  panel.classList.toggle('hidden',!show);
+  panel.setAttribute('aria-hidden',show?'false':'true');
+  if(show){document.querySelector('#controls')?.classList.remove('hiddenBar');}
+}
+const eventLuckyBtn=document.querySelector('#eventLuckyBtn');
+const closeEventLuckyHost=document.querySelector('#closeEventLuckyHost');
+if(eventLuckyBtn)eventLuckyBtn.onclick=()=>setLiveLuckyHostVisible(true);
+if(closeEventLuckyHost)closeEventLuckyHost.onclick=()=>setLiveLuckyHostVisible(false);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')setLiveLuckyHostVisible(false);});const luckyCloseBtn=document.querySelector('#luckyCloseBtn');
+if(luckyCloseBtn)luckyCloseBtn.onclick=()=>{
   luckyOverlay.classList.add('hidden');
   clearInterval(luckyRollTimer);
 };
@@ -2479,25 +2808,15 @@ function luckyStartRolling(songs){
 }
 function luckyStopRolling(){
   clearInterval(luckyRollTimer);
-  let count=0;
   const finalS=luckyPool[Math.floor(Math.random()*luckyPool.length)];
-  const slowDown=setInterval(()=>{
-    count++;
-    const s=luckyPool[Math.floor(Math.random()*luckyPool.length)];
-    document.querySelector('#luckySong').textContent=s.title;
-    document.querySelector('#luckyArtist').textContent=s.artist;
-    if(count>=12){
-      clearInterval(slowDown);
-      document.querySelector('#luckySong').classList.remove('rolling');
-      document.querySelector('#luckyResultSong').textContent=finalS.title;
-      document.querySelector('#luckyResultArtist').textContent=finalS.artist;
-      document.querySelector('#luckyResult').classList.add('show');
-      // 存当前抽中的歌，等点了播放才算已唱
-      window._luckyResult=finalS;
-    }
-  },200);
+  document.querySelector('#luckySong').classList.remove('rolling');
+  document.querySelector('#luckyResultSong').textContent=finalS.title;
+  document.querySelector('#luckyResultArtist').textContent=finalS.artist;
+  document.querySelector('#luckyResult').classList.add('show');
+  window._luckyResult=finalS;
 }
-document.querySelector('#luckyPlayBtn').onclick=()=>{
+const luckyPlayBtn=document.querySelector('#luckyPlayBtn');
+if(luckyPlayBtn)luckyPlayBtn.onclick=()=>{
   const s=window._luckyResult;
   if(s){
     setLocalTrack(s).then(()=>{
@@ -2506,7 +2825,8 @@ document.querySelector('#luckyPlayBtn').onclick=()=>{
     });
   }
 };
-document.querySelector('#luckyAgainBtn').onclick=()=>{
+const luckyAgainBtn=document.querySelector('#luckyAgainBtn');
+if(luckyAgainBtn)luckyAgainBtn.onclick=()=>{
   document.querySelector('#luckyResult').classList.remove('show');
   luckyStartRolling(luckyPool);
 };

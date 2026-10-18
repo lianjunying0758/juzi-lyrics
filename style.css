@@ -1,6 +1,11 @@
-﻿*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;background:#0b0b0b;color:#fff;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;cursor:default}
 body{display:flex;justify-content:center}
+
+/* 图片背景层：设置中开启，垫在歌词舞台下方 */
+#bgImageLayer{position:fixed;top:0;left:0;right:0;bottom:0;z-index:0;background-size:cover;background-position:center;background-repeat:no-repeat;pointer-events:none;transition:opacity .3s ease}
+#bgImageLayer.hidden{display:none}
+body.bg-img .stage{background:transparent}
 
 /* logo用独立div+CSS背景，固定左上角，按图片原始比例480:340设置尺寸，半透明大水印 */
 .logoBg{position:fixed;top:4px;left:6px;width:calc(80px * var(--logo-scale,1));height:calc(32px * var(--logo-scale,1));background-image:url('assets/logo.png');background-size:contain;background-repeat:no-repeat;background-position:left top;z-index:200;pointer-events:none;opacity:.7;transition:opacity .3s ease,width .2s,height .2s}
@@ -8,7 +13,7 @@ body{display:flex;justify-content:center}
 
 #app{width:100%;height:100%;position:relative}
 
-main{width:min(1200px,100vw);height:100vh;height:100dvh;display:flex;flex-direction:column;position:relative;max-height:100vh;max-height:100dvh}
+main{width:min(1600px,100vw);height:100vh;height:100dvh;display:flex;flex-direction:column;position:relative;max-height:100vh;max-height:100dvh}
 
 /* 歌单面板：播放时和控制栏一起隐藏 */
 .searchPanel{position:fixed;top:0;left:0;right:0;padding:calc(10px + env(safe-area-inset-top)) 14px 12px;background:#111;border-bottom:1px solid #333;box-shadow:0 4px 20px rgba(0,0,0,.5);transition:opacity .25s ease,max-height .25s ease,padding .25s ease;max-height:60vh;overflow:hidden;z-index:9999}
@@ -34,7 +39,7 @@ main{width:min(1200px,100vw);height:100vh;height:100dvh;display:flex;flex-direct
 .lyricsViewport::before,.lyricsViewport::after{display:none}
 .lyricsTrack{width:100%;transition:transform .2s ease-out;will-change:transform}
 .lyricSpacer{width:100%}
-.lyricLine{text-align:center;padding:10px 8vw;font-weight:600;line-height:1.25;color:#555;font-size:calc(var(--active-size,38px) * 0.5);transition:color .3s ease,opacity .3s ease;opacity:.3;white-space:pre-wrap}
+.lyricLine{text-align:center;padding:10px 5vw;font-weight:600;line-height:1.25;color:#555;font-size:calc(var(--active-size,38px) * 0.5);transition:color .3s ease,opacity .3s ease;opacity:.3;white-space:pre-wrap}
 .lyricLine.active{color:#fff;font-size:var(--active-size,38px);opacity:1;text-shadow:0 0 30px rgba(243,107,10,.35)}
 .lyricLine.near{color:#999;opacity:.65;font-size:calc(var(--active-size,38px) * 0.7)}
 /* 互动模式三色 */
@@ -54,13 +59,15 @@ main{width:min(1200px,100vw);height:100vh;height:100dvh;display:flex;flex-direct
 .legendDot.chorus{background:#ffd700;color:#ffd700}
 
 /* 控制栏 */
-.controls{padding:10px 14px calc(14px + env(safe-area-inset-bottom));background:rgba(17,17,17,.95);border-top:1px solid #222;transition:opacity .4s ease,transform .4s ease,max-height .4s ease,padding .4s ease;z-index:20;flex-shrink:0;-webkit-transform:translateZ(0);transform:translateZ(0);max-height:200px;overflow:hidden}
+.controls{padding:10px 14px calc(14px + env(safe-area-inset-bottom));background:rgba(17,17,17,.95);border-top:1px solid #222;transition:opacity .4s ease,transform .4s ease,max-height .4s ease,padding .4s ease;z-index:20;flex-shrink:0;-webkit-transform:translateZ(0);transform:translateZ(0);max-height:300px;overflow:hidden}
 .controls.hiddenBar{opacity:0;transform:translateY(100%);pointer-events:none;max-height:0;padding-top:0;padding-bottom:0;border-top:none}
 .controls input[type=range]{width:100%;accent-color:#f36b0a;height:6px;cursor:pointer}
-.controlRow{display:flex;justify-content:center;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;max-width:100%;width:100%}
-.controlRow button{border:0;border-radius:10px;background:#242424;color:#fff;padding:10px 12px;font-size:15px;cursor:pointer;min-width:48px}
-.controlRow button:active{transform:scale(.93)}
-.controlRow .play{background:#f36b0a;font-size:20px;min-width:60px}
+.controlRow{display:grid;grid-template-columns:repeat(auto-fit,minmax(52px,1fr));justify-content:center;align-items:stretch;gap:5px;margin-top:8px;max-width:100%;width:100%}
+.controlRow button,.controlRow .controlLink{border:0;border-radius:10px;background:#242424;color:#fff;padding:7px 4px;font-size:15px;cursor:pointer;min-width:0;min-height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;text-align:center;text-decoration:none;line-height:1.05}
+.controlRow button::after,.controlRow .controlLink::after{content:attr(data-label);display:block;font-size:10px;line-height:1.1;color:rgba(255,255,255,.78);white-space:nowrap}
+.controlRow button:active,.controlRow .controlLink:active{transform:scale(.95)}
+.controlRow button:focus-visible,.controlRow .controlLink:focus-visible{outline:2px solid #f36b0a;outline-offset:2px}
+.controlRow .play{background:#f36b0a;font-size:20px;min-width:0}
 
 /* 倒计时 */
 .countdown{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:140px;font-weight:800;color:#f36b0a;z-index:200;text-shadow:0 0 50px rgba(243,107,10,.6);pointer-events:none}
@@ -99,11 +106,12 @@ main{width:min(1200px,100vw);height:100vh;height:100dvh;display:flex;flex-direct
 .is-desktop .resultTitle{font-size:17px}
 .is-desktop .resultMeta{font-size:12px}
 .is-desktop .songList{max-height:calc(50vh - 70px)}
-.is-desktop .lyricLine{font-size:calc(var(--active-size,48px) * 0.5);padding:12px 20vw}
+.is-desktop .lyricLine{font-size:calc(var(--active-size,48px) * 0.5);padding:12px clamp(24px,8vw,140px)}
 .is-desktop .lyricLine.active{font-size:var(--active-size,56px)}
 .is-desktop .lyricLine.near{font-size:calc(var(--active-size,48px) * 0.7)}
 .is-desktop .controls{padding:16px 24px 20px}
 .is-desktop .controls button{font-size:18px;padding:14px 20px}
+.is-desktop .controls .controlRow button,.is-desktop .controls .controlRow .controlLink{font-size:16px;padding:7px 4px;min-width:0;min-height:52px}
 .is-desktop .controls input[type=range]{height:8px}
 .is-desktop .nowPlaying{font-size:18px}
 .is-desktop .timeDisplay{font-size:16px}
@@ -369,3 +377,107 @@ main{width:min(1200px,100vw);height:100vh;height:100dvh;display:flex;flex-direct
 .luckyPlayed h4{color:#f36b0a;font-size:14px;margin-bottom:10px;text-align:center;}
 .luckyPlayedItems div{font-size:12px;color:#888;padding:4px 0;border-bottom:1px solid #333;}
 .luckyCloseBtn{position:fixed;top:20px;right:20px;width:44px;height:44px;border-radius:50%;border:none;background:#333;color:#fff;font-size:18px;cursor:pointer;z-index:100;}
+to{transform:translateX(-100%);}
+}
+/* 遥控器：手机/电脑宽屏适配 */
+.remoteApp{width:100%;}
+.remoteApp .rMain{width:100%;}
+.remoteApp .rPanels{width:100%;}
+@media (min-width:900px){
+  .remoteApp{max-width:1000px !important;margin:0 auto;flex-direction:row !important;align-items:flex-start !important;gap:24px !important;}
+  .remoteApp .rMain{flex:0 0 340px;}
+  .remoteApp .rPanels{flex:1;}
+  .remoteApp .rFnGrid{grid-template-columns:1fr 1fr !important;}
+  .remoteApp .rPlayRow{display:flex !important;justify-content:center !important;}
+  .remoteApp .rMain>div,.remoteApp .rPanels>div{max-width:100% !important;}
+  #rPlaylistPanel{display:block !important;}
+}
+
+/* Responsive controls and settings */
+.is-desktop .logoBg.hide{opacity:0}
+.settings{max-height:calc(100dvh - 24px - env(safe-area-inset-top));overflow-y:auto;overscroll-behavior:contain}
+.searchPanel{padding-left:clamp(10px,2vw,24px);padding-right:clamp(10px,2vw,24px)}
+.meta{max-width:min(72vw,700px);padding-left:12px}
+@media (max-width:640px){
+  .controls{padding:7px 8px calc(9px + env(safe-area-inset-bottom));max-height:270px}
+  .controlRow{grid-template-columns:repeat(auto-fit,minmax(48px,1fr));gap:4px;margin-top:5px}
+  .controlRow button,.controlRow .controlLink{min-height:46px;padding:5px 2px;border-radius:8px}
+  .controlRow button::after,.controlRow .controlLink::after{font-size:9px}
+  .controlRow .play{font-size:18px}
+  .searchPanel{max-height:46dvh;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:8px}
+  .songList{max-height:calc(35dvh - 48px);min-height:72px}
+  .meta{right:12px;top:calc(12px + env(safe-area-inset-top));max-width:68vw;font-size:11px}
+  .interactiveLegend{left:4px;gap:9px;padding:9px 6px;font-size:10px}
+  .settings{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:min(380px,calc(100vw - 16px));max-height:calc(100dvh - 16px - env(safe-area-inset-top))}
+  .settings label{font-size:12px;gap:8px;margin:10px 0}
+  .settings select,.settings input:not([type=checkbox]):not([type=range]){max-width:45%;min-width:88px}
+}
+@media (max-width:360px){
+  .controls{padding-left:5px;padding-right:5px}
+  .controlRow{grid-template-columns:repeat(auto-fit,minmax(44px,1fr));gap:3px}
+  .controlRow button,.controlRow .controlLink{font-size:13px;min-height:43px}
+  .controlRow button::after,.controlRow .controlLink::after{font-size:8px}
+  .meta{max-width:64vw;font-size:10px}
+}
+@media (orientation:landscape) and (max-height:520px){
+  .controls{padding:5px 8px calc(6px + env(safe-area-inset-bottom));max-height:180px}
+  .controlRow{grid-template-columns:repeat(auto-fit,minmax(38px,1fr));gap:3px;margin-top:4px}
+  .controlRow button,.controlRow .controlLink{min-height:40px;padding:3px 1px;font-size:13px}
+  .controlRow button::after,.controlRow .controlLink::after{font-size:8px;margin-top:1px}
+  .searchPanel{max-height:42dvh}
+  .songList{max-height:calc(34dvh - 48px);min-height:56px}
+}
+
+/* Remote controller usability pass */
+.remoteApp{min-height:100dvh !important;height:auto !important;padding:clamp(12px,3vw,24px) !important;gap:14px !important;align-items:stretch !important;background:radial-gradient(ellipse at 50% 0,#17232a 0,#0b0b0b 52%) !important;overscroll-behavior-y:contain;padding-bottom:calc(20px + env(safe-area-inset-bottom)) !important}
+.remoteApp .rMain,.remoteApp .rPanels{width:100%;min-width:0}
+.remoteApp .rMain{max-width:520px;margin:0 auto;background:rgba(22,22,22,.94);border:1px solid #292929;border-radius:20px;padding:18px 16px;box-shadow:0 12px 32px rgba(0,0,0,.28)}
+.remoteApp .rMain h2{font-size:20px;letter-spacing:.02em}
+.remoteApp #rSong{display:flex;align-items:center;justify-content:center;min-height:52px;padding:10px 12px;border:1px solid rgba(79,195,247,.18);border-radius:12px;background:rgba(79,195,247,.07);text-align:center;line-height:1.45;overflow-wrap:anywhere}
+.remoteApp #rProgress{height:28px;accent-color:#4fc3f7;touch-action:pan-x}
+.remoteApp .rPlayRow{justify-content:center;gap:clamp(22px,8vw,42px) !important;margin:14px 0 !important}
+.remoteApp .rPlayRow button{flex:none;box-shadow:0 5px 16px rgba(0,0,0,.25);touch-action:manipulation}
+.remoteApp .rPlayRow #rPlay{width:76px !important;height:76px !important}
+.remoteApp .rPlayRow #rPrev,.remoteApp .rPlayRow #rNext{width:58px !important;height:58px !important}
+.remoteApp .rMain>div:nth-of-type(3),.remoteApp .rMain>div:nth-of-type(4){justify-content:center;flex-wrap:wrap;gap:10px !important;margin:12px 0 !important}
+.remoteApp .rMain>div:nth-of-type(3) button,.remoteApp .rMain>div:nth-of-type(4) button{min-width:92px;min-height:44px;padding:10px 14px !important;border:1px solid #383838 !important;border-radius:12px !important;background:#262626 !important;font-size:14px !important;touch-action:manipulation}
+.remoteApp .rFnGrid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:8px !important;margin:14px auto 0 !important}
+.remoteApp .rFnGrid button{min-height:48px;padding:10px 8px !important;border:1px solid #333 !important;border-radius:12px !important;font-size:14px !important;font-weight:600;touch-action:manipulation}
+.remoteApp .rFnGrid #rShowLucky{grid-column:span 2;background:linear-gradient(110deg,#f36b0a,#d94c20) !important}
+.remoteApp #rStatus{position:sticky;bottom:calc(8px + env(safe-area-inset-bottom));z-index:4;width:fit-content;max-width:100%;align-self:center;margin:0 auto !important;padding:8px 14px;border:1px solid #303030;border-radius:999px;background:rgba(18,18,18,.94);text-align:center;backdrop-filter:blur(10px)}
+.remoteApp .rPanels{max-width:520px;margin:0 auto}
+.remoteApp #rSearchPanel,.remoteApp #rPlaylistPanel,.remoteApp #rSettingsPanel,.remoteApp #rLuckyPanel{max-width:none !important;margin:0 0 14px !important;border:1px solid #2a2a2a;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.remoteApp #rSearchPanel,.remoteApp #rPlaylistPanel{padding:14px;background:#171717}
+.remoteApp #rSearch{min-height:48px;padding:12px 14px !important;border:1px solid #3a3a3a !important;border-radius:12px !important;font-size:16px !important}
+.remoteApp #rSearchResults,.remoteApp #rPlaylistSongs{max-height:min(42dvh,360px) !important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.remoteApp #rSearchResults>div,.remoteApp #rPlaylistSongs>div{min-height:48px;padding:12px !important;border-bottom:1px solid #303030;line-height:1.4}
+.remoteApp #rPlaySelected{min-height:48px;border-radius:12px !important;touch-action:manipulation}
+.remoteApp #rSettingsPanel{padding:16px !important;background:#171717 !important}
+.remoteApp #rSettingsPanel>div{min-height:48px;gap:14px}
+.remoteApp #rSettingsPanel button{min-width:64px;min-height:40px}
+.remoteApp #rLogoScale{max-width:52%;accent-color:#4fc3f7}
+.remoteApp #rLuckyPanel>div{padding:14px !important;background:#171717 !important}
+.remoteApp #rLuckyPanel button{min-height:46px;touch-action:manipulation}
+.remoteApp #rLuckyPanel input{min-height:44px;font-size:16px !important}
+.remoteApp #rLuckyArtistGrid{grid-template-columns:repeat(auto-fit,minmax(76px,1fr)) !important;max-height:30dvh;overflow:auto;overscroll-behavior:contain}
+.remoteApp #rLuckyArtistGrid button{min-height:74px}
+.remoteApp #rLuckyArtistSongs,.remoteApp #luckySearchResults,.remoteApp #luckySelectedList{max-height:34dvh !important;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.remoteApp button{transition:transform .12s ease,filter .12s ease,background-color .12s ease}
+.remoteApp button:active{transform:scale(.97);filter:brightness(1.15)}
+.remoteApp button:focus-visible,.remoteApp input:focus-visible{outline:2px solid #4fc3f7;outline-offset:2px}
+@media(min-width:900px){.remoteApp{min-height:100dvh !important;padding:24px !important;gap:24px !important}.remoteApp .rMain{position:sticky;top:18px;max-height:calc(100dvh - 36px);overflow-y:auto;overscroll-behavior:contain}.remoteApp .rPanels{padding-top:0}.remoteApp #rStatus{position:fixed;bottom:12px}}
+@media(max-width:360px){.remoteApp{padding:10px 8px calc(16px + env(safe-area-inset-bottom)) !important}.remoteApp .rMain{padding:14px 12px;border-radius:16px}.remoteApp .rFnGrid{gap:6px !important}.remoteApp .rFnGrid button{font-size:13px !important}.remoteApp .rPlayRow{gap:18px !important}}
+@media(orientation:landscape) and (max-height:520px){.remoteApp{padding:8px 12px calc(12px + env(safe-area-inset-bottom)) !important;gap:10px !important}.remoteApp .rMain{padding:10px 14px}.remoteApp .rMain h2{font-size:18px}.remoteApp #rSong{min-height:40px;padding:6px 10px}.remoteApp .rPlayRow{margin:8px 0 !important}.remoteApp .rPlayRow #rPlay{width:60px !important;height:60px !important}.remoteApp .rPlayRow #rPrev,.remoteApp .rPlayRow #rNext{width:48px !important;height:48px !important}.remoteApp .rMain>div:nth-of-type(3),.remoteApp .rMain>div:nth-of-type(4){margin:6px 0 !important}.remoteApp .rFnGrid{margin-top:8px !important}.remoteApp .rFnGrid button{min-height:42px}.remoteApp #rStatus{position:sticky}}.remoteApp #rFontSize{flex:1;min-width:72px;max-width:240px;height:30px;touch-action:pan-x}
+.remoteApp #rEventLuckyPanel{max-width:none !important;margin:0 0 14px !important;box-shadow:0 8px 24px rgba(0,0,0,.24)}
+.remoteApp #rEventRoom{min-height:46px}
+.remoteApp #rEventMode,.remoteApp #rEventCount{min-height:44px}
+.remoteApp #rEventStop{background:#69359a;touch-action:manipulation}
+.remoteApp #rEventStart{background:linear-gradient(110deg,#f36b0a,#d94c20);touch-action:manipulation}
+.lyricsViewport{touch-action:none;overscroll-behavior:contain}
+/*现场观众抽奖主持台嵌入播放器页面*/
+.eventLuckyHostPanel{position:fixed;inset:0;z-index:100500;display:flex;flex-direction:column;background:#090909;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.eventLuckyHostPanel.hidden{display:none}
+.eventLuckyHostHeader{height:48px;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 14px;background:#111;border-bottom:1px solid #27232e;color:#eee;font-size:14px;font-weight:700}
+.eventLuckyHostHeader button{min-height:36px;padding:6px 12px;border:1px solid #514064;border-radius:9px;background:#241b2e;color:#fff;font-size:13px}
+#eventLuckyHostFrame{width:100%;height:calc(100% - 48px);flex:1;min-height:0;border:0;background:#0b0b0b}
+.remoteApp #rEventEnter,.remoteApp #rEventExit{touch-action:manipulation}

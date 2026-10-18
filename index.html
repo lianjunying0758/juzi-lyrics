@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0b0b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" sizes="120x120" href="assets/icons/icon-120.png">
 <title>桔子好声音 · H5歌词播放器</title>
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="style.css?v=20260924b">
+<link rel="stylesheet" href="style.css?v=20261018integrated1">
 </head>
 <body>
 <!-- 开屏动画 -->
@@ -92,20 +92,21 @@
     <section class="controls" id="controls">
       <input id="progress" type="range" min="0" max="100" value="0" step="0.1">
       <div class="controlRow">
-        <button id="prevBtn" title="上一首">⏮</button>
-        <button id="playBtn" class="play">▶</button>
-        <button id="nextBtn" title="下一首">⏭</button>
-        <button id="clearBtn" title="清空歌词">🗑</button>
-        <button id="playlistBtn" title="歌单点歌">📋</button>
-        <button id="myPlaylistBtn" title="我的歌单">🎵</button>
-        <button id="playingListBtn" title="播放列表" style="display:none">📜</button>
-        <button id="remoteBtn" title="手机遥控器">📱</button>
-        <button id="searchToggleBtn" title="搜索歌单">🔍</button>
-        <button id="settingsBtn">⚙</button>
-        <button id="fullBtn" title="全屏">⛶</button>
-        <button id="lockBtn" title="锁定控制栏">🔒</button>
-        <button id="luckyBtn" title="抽奖点歌">🎲</button>
-        <button id="hideBtn" title="隐藏控制栏">▼</button>
+        <button id="prevBtn" title="上一首" aria-label="上一首" data-label="上一首">⏮</button>
+        <button id="playBtn" class="play" title="播放或暂停" aria-label="播放或暂停" data-label="播放">▶</button>
+        <button id="nextBtn" title="下一首" aria-label="下一首" data-label="下一首">⏭</button>
+        <button id="clearBtn" title="清空歌词" aria-label="清空歌词" data-label="清空">🗑</button>
+        <button id="playlistBtn" title="歌单点歌" aria-label="歌单点歌" data-label="点歌">📋</button>
+        <button id="myPlaylistBtn" title="我的歌单" aria-label="我的歌单" data-label="我的歌单">🎵</button>
+        <button id="playingListBtn" title="播放列表" aria-label="播放列表" style="display:none" data-label="播放列表">📜</button>
+        <button id="remoteBtn" title="手机遥控器" aria-label="手机遥控器" data-label="遥控">📱</button>
+        <button id="searchToggleBtn" title="搜索歌单" aria-label="搜索歌单" data-label="搜索">🔍</button>
+        <button id="settingsBtn" title="设置" aria-label="设置" data-label="设置">⚙</button>
+        <button id="fullBtn" title="全屏切换" aria-label="全屏切换" data-label="全屏">⛶</button>
+        <button id="lockBtn" title="锁定或解锁控制栏" aria-label="锁定或解锁控制栏" data-label="锁定">🔒</button>
+        <button id="luckyBtn" title="抽奖点歌" aria-label="抽奖点歌" data-label="歌单抽奖">🎲</button>
+        <button id="eventLuckyBtn" title="现场观众抽奖" aria-label="现场抽奖" data-label="现场抽奖">🎟</button>
+        <button id="hideBtn" title="隐藏控制栏" aria-label="隐藏控制栏" data-label="隐藏">▼</button>
       </div>
     </section>
   </main>
@@ -136,7 +137,7 @@
   <div id="playlistPanel" class="playlistPanel hidden">
     <div class="playlistHeader">
       <span class="playlistTitle">🎵 歌单点歌</span>
-      <button id="closePlaylist" class="closePlaylist">✕</button>
+      <button id="closePlaylist" class="closePlaylist" title="关闭歌单" aria-label="关闭歌单">✕</button>
     </div>
     <div class="singerScroll" id="singerScroll">
       <!-- 歌手头像列表由JS生成 -->
@@ -151,7 +152,7 @@
   <div id="myPlaylistPanel" class="myPlaylistPanel hidden">
     <div class="mpHeader">
       <span class="mpTitle">🎵 我的歌单</span>
-      <button id="closeMyPlaylist" class="mpClose">✕</button>
+      <button id="closeMyPlaylist" class="mpClose" title="关闭我的歌单" aria-label="关闭我的歌单">✕</button>
     </div>
 
     <!-- 歌单列表视图 -->
@@ -214,7 +215,7 @@
     <div class="scanContent">
       <div class="scanHeader">
         <span class="scanTitle">📷 扫码导入歌单</span>
-        <button id="closeScanBtn" class="scanClose">✕</button>
+        <button id="closeScanBtn" class="scanClose" title="关闭扫码窗口" aria-label="关闭扫码窗口">✕</button>
       </div>
       <div class="scanViewport">
         <video id="scanVideo" playsinline></video>
@@ -239,7 +240,7 @@
   <div id="playingListPanel" class="playingListPanel hidden">
     <div class="plHeader">
       <span class="plTitle" id="plTitle">播放列表</span>
-      <button id="closePlayingList" class="plClose">✕</button>
+      <button id="closePlayingList" class="plClose" title="关闭播放列表" aria-label="关闭播放列表">✕</button>
     </div>
     <div id="playingListSongs" class="plSongs"></div>
   </div>
@@ -248,7 +249,7 @@
   <div id="remotePairPanel" class="remotePairPanel hidden">
     <div class="rpHeader">
       <span class="rpTitle">📱 手机遥控器配对</span>
-      <button id="closeRemotePair" class="rpClose">✕</button>
+      <button id="closeRemotePair" class="rpClose" title="关闭遥控器配对" aria-label="关闭遥控器配对">✕</button>
     </div>
     <div class="rpContent">
       <p class="rpHint">用手机扫码配对，手机就能当遥控器</p>
@@ -288,8 +289,15 @@
   </div>
   <button id="luckyCloseBtn" class="luckyCloseBtn">✕ 退出抽奖</button>
 </div>
+<div id="eventLuckyHostPanel" class="eventLuckyHostPanel hidden" aria-hidden="true">
+  <div class="eventLuckyHostHeader">
+    <span>🎟 现场观众抽奖</span>
+    <button id="closeEventLuckyHost" type="button" aria-label="退出现场抽奖">退出抽奖 ✕</button>
+  </div>
+  <iframe id="eventLuckyHostFrame" title="现场观众抽奖主持台" data-src="https://juzi-lucky.pages.dev/host?embedded=1" src="about:blank" allow="fullscreen" loading="lazy"></iframe>
+</div>
 <script src="qrcode.min.js"></script>
 <script src="jsQR.min.js"></script>
-<script src="app.js?v=20261017bg1"></script>
+<script src="app.js?v=20261018integrated1"></script>
 </body>
 </html>

@@ -2,17 +2,17 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>桔子好声音 · 遥控器</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;}
   body{
-    background:#0b0b0b;color:#fff;min-height:100vh;
+    background:#0b0b0b;color:#fff;min-height:100vh;min-height:100dvh;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);overflow-y:auto;
     display:flex;align-items:center;justify-content:center;
     font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
   }
-  .box{width:86%;max-width:380px;text-align:center;padding:40px 24px;}
+  .box{width:min(92vw,380px);max-width:100%;text-align:center;padding:clamp(20px,6vh,40px) clamp(16px,6vw,24px);}
   .logo{font-size:52px;margin-bottom:12px;}
   h1{font-size:24px;font-weight:800;margin-bottom:6px;color:#f36b0a;}
   .tip{color:#888;font-size:14px;margin-bottom:32px;line-height:1.6;}
@@ -31,6 +31,7 @@
   button:active{transform:scale(.97);}
   .err{color:#ff5555;font-size:13px;margin-top:14px;min-height:18px;}
   .foot{color:#555;font-size:12px;margin-top:28px;line-height:1.7;}
+  @media(max-height:520px){.box{padding-top:16px;padding-bottom:16px}.logo{font-size:40px;margin-bottom:6px}.tip{margin-bottom:16px}.foot{margin-top:16px}}
 </style>
 </head>
 <body>
@@ -39,7 +40,7 @@
     <h1>桔子好声音遥控器</h1>
     <p class="tip">输入电脑屏幕上显示的<br><b>设备码</b>即可连接</p>
     <input id="code" maxlength="8" autocomplete="off" spellcheck="false" placeholder="例如 AB3K9F">
-    <button id="btn">连 接</button>
+    <button id="btn" aria-label="连接遥控器">连接遥控器</button>
     <p class="err" id="err"></p>
     <div class="foot">连接后进入遥控器页面<br>之后打开会自动记住设备码，无需再输</div>
   </div>
