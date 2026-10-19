@@ -13500,5 +13500,19 @@
     "artist": "陈奕迅",
     "lrc": "lrc/陈奕迅 - 陀飞轮 (Live).lrc",
     "_py": "tfl (live)"
+  },
+  {
+    "id": 1930,
+    "title": "今天等我来",
+    "artist": "陈奕迅",
+    "lrc": "lrc/陈奕迅 - 今天等我来.lrc",
+    "_py": "jtdwl"
+  },
+  {
+    "id": 1931,
+    "title": "十分十二寸",
+    "artist": "林子祥",
+    "lrc": "lrc/林子祥 - 十分十二寸.lrc",
+    "_py": "sfscc"
   }
 ]
